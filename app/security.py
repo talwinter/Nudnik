@@ -6,6 +6,7 @@ occurrence and one action -- not a signed blob of user input.
 """
 import hmac
 import secrets
+import time
 from datetime import datetime, timedelta
 
 from fastapi import Header, HTTPException, Request
@@ -107,6 +108,55 @@ def password_ok(candidate: str) -> bool:
     if not ADMIN_PASSWORD:
         return False
     return hmac.compare_digest(str(candidate), str(ADMIN_PASSWORD))
+
+
+# --------------------------------------------------------------------------
+# Brute-force protection
+# --------------------------------------------------------------------------
+#
+# The login page sits on a public URL, so without this a password can be
+# attacked at whatever rate the network allows. Held in memory rather than the
+# database: a restart clearing the counters is an acceptable trade for not
+# writing a row on every failed guess, and an attacker cannot force a restart.
+
+MAX_ATTEMPTS = 6
+LOCKOUT_SECONDS = 900          # 15 minutes
+ATTEMPT_WINDOW = 900
+
+_failures: dict[str, list[float]] = {}
+
+
+def _client_key(request: Request) -> str:
+    """Identify the caller. Behind a tunnel the real address is forwarded."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def lockout_remaining(request: Request) -> int:
+    """Seconds until this client may try again; 0 when it may try now."""
+    key = _client_key(request)
+    now = time.time()
+    recent = [t for t in _failures.get(key, []) if now - t < ATTEMPT_WINDOW]
+    _failures[key] = recent
+    if len(recent) < MAX_ATTEMPTS:
+        return 0
+    return max(1, int(LOCKOUT_SECONDS - (now - recent[-1])))
+
+
+def record_failure(request: Request) -> None:
+    key = _client_key(request)
+    _failures.setdefault(key, []).append(time.time())
+    # Keep the map from growing without bound on a long-lived process.
+    if len(_failures) > 2048:
+        cutoff = time.time() - ATTEMPT_WINDOW
+        for k in [k for k, v in _failures.items() if not v or v[-1] < cutoff]:
+            _failures.pop(k, None)
+
+
+def clear_failures(request: Request) -> None:
+    _failures.pop(_client_key(request), None)
 
 
 def auth_required() -> bool:

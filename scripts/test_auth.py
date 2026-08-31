@@ -100,7 +100,33 @@ def main() -> int:
         r = user.get("/logout")
         check("logout redirects", r.status_code == 303, str(r.status_code))
 
-    print("\n=== 5. A forged cookie is rejected ===")
+    print("\n=== 5. Brute force is throttled ===")
+    from app import security as sec
+
+    sec._failures.clear()
+    with TestClient(app, follow_redirects=False) as attacker:
+        codes = []
+        for i in range(sec.MAX_ATTEMPTS + 2):
+            r = attacker.post("/login", data={"password": f"guess{i}", "next": "/"})
+            codes.append(r.status_code)
+        check("every guess refused", all(c == 401 for c in codes), str(codes))
+        check("locked out after the limit",
+              "Too many" in r.text or "יותר מדי" in r.text)
+
+        # The lockout must not be bypassed by then supplying the RIGHT password.
+        r = attacker.post("/login", data={"password": "s3cret-pass", "next": "/"})
+        check("correct password still refused while locked out",
+              r.status_code == 401 and "nudnik_session" not in r.cookies,
+              str(r.status_code))
+
+    with TestClient(app, follow_redirects=False) as other:
+        r = other.post("/login", data={"password": "s3cret-pass", "next": "/"},
+                       headers={"x-forwarded-for": "203.0.113.9"})
+        check("a different address is not punished for it",
+              r.status_code == 303, str(r.status_code))
+    sec._failures.clear()
+
+    print("\n=== 6. A forged cookie is rejected ===")
     with TestClient(app, follow_redirects=False) as forger:
         forger.cookies.set("nudnik_session", "admin.FAKE.SIGNATURE")
         r = forger.get("/api/reminders")

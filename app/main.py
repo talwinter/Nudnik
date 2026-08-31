@@ -211,8 +211,27 @@ def login_submit(
     db: Session = Depends(api.get_db),
 ):
     lang = settings_store.get(db, "lang", "he")
+
+    # Refuse before checking the password at all, so a locked-out client learns
+    # nothing from response timing.
+    wait = security_mod.lockout_remaining(request)
+    if wait:
+        minutes = max(1, wait // 60)
+        log_event(db, "auth", f"Sign-in blocked, {wait}s of lockout remaining")
+        db.commit()
+        return _login_page(
+            db,
+            error=(f"יותר מדי ניסיונות. נסה שוב בעוד {minutes} דקות"
+                   if lang == "he" else
+                   f"Too many attempts. Try again in {minutes} min"),
+            next_path=next,
+        )
+
     if not security_mod.password_ok(password):
-        log_event(db, "auth", "Failed sign-in attempt")
+        security_mod.record_failure(request)
+        left = max(0, security_mod.MAX_ATTEMPTS - len(
+            security_mod._failures.get(security_mod._client_key(request), [])))
+        log_event(db, "auth", f"Failed sign-in attempt ({left} left before lockout)")
         db.commit()
         return _login_page(
             db,
@@ -220,6 +239,9 @@ def login_submit(
             next_path=next,
         )
 
+    security_mod.clear_failures(request)
+    log_event(db, "auth", "Signed in")
+    db.commit()
     response = RedirectResponse(security_mod.sanitise_next(next), status_code=303)
     response.set_cookie(
         security_mod.SESSION_COOKIE,
@@ -229,8 +251,16 @@ def login_submit(
         samesite="lax",
         # Secure is set whenever the request arrived over HTTPS, which behind a
         # tunnel is reported through the forwarded proto header.
-        secure=request.url.scheme == "https"
-        or request.headers.get("x-forwarded-proto") == "https",
+        # Judged from the request, never from the configured public URL: a
+        # dev instance on http://localhost while PUBLIC_URL is https would
+        # otherwise get a Secure cookie the browser refuses to send back, and
+        # signing in would be impossible with no visible reason. uvicorn runs
+        # with --proxy-headers, so behind the tunnel the scheme is already
+        # rewritten to https from X-Forwarded-Proto.
+        secure=(
+            request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto") == "https"
+        ),
     )
     return response
 
