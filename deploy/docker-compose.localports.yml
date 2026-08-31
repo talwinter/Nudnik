@@ -1,0 +1,24 @@
+# Direct access for debugging, without giving up the no-published-ports setup.
+#
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.localports.yml up -d
+#
+# Binds to 127.0.0.1 only, so the ports are reachable from the server itself
+# and nothing else -- not the LAN, not the internet. From your own machine:
+#
+#   ssh -L 8080:localhost:8080 you@server
+#   # then browse http://localhost:8080
+#
+# Note that http://localhost:8080 is a DIFFERENT ORIGIN from your tunnel
+# hostname. Service workers, push subscriptions and the installed PWA are all
+# bound to an origin, so treat this as a debugging view only -- do not enable
+# notifications here or you will end up with two half-configured installs and
+# duplicate devices in the list.
+
+services:
+  app:
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8000"
+
+  ntfy:
+    ports:
+      - "127.0.0.1:${NTFY_PORT:-8081}:80"

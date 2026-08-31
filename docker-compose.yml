@@ -1,11 +1,21 @@
 # Nudnik -- fully self-hosted stack.
 #
 # Nothing here calls a third-party service. Postgres holds the data, ntfy is
-# your own push server, and the app talks to both over the internal network.
+# your own push server, and the app talks to both over an internal network.
 #
-# Dev on a PC behind a Cloudflare tunnel: this file is enough.
-# On the Oracle box with a public IP, add the Caddy override for HTTPS:
-#   docker compose -f docker-compose.yml -f deploy/docker-compose.caddy.yml up -d
+#   docker network create edge          # once per server
+#   docker compose up -d
+#
+# NO PORTS ARE PUBLISHED. Containers are reached by name from the tunnel
+# connector, which removes the whole class of "which app owns 8080" problems --
+# every app on this server can use its natural internal port.
+#
+# Route to it from the Zero Trust dashboard:
+#   nudnik.example.com  ->  http://nudnik-app:8000
+#   ntfy.example.com    ->  http://nudnik-ntfy:80
+#
+# Need direct access for debugging? Add the localports override:
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.localports.yml up -d
 #
 # Everything is arm64-compatible, so it runs unchanged on Ampere.
 
@@ -14,26 +24,32 @@ name: nudnik
 services:
   app:
     build: .
-    container_name: nudnik
+    # Referenced by name from the tunnel, so it must be unique across every
+    # stack sharing the `edge` network.
+    container_name: nudnik-app
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg://nudnik:${POSTGRES_PASSWORD:-nudnik}@db:5432/nudnik
+      DATABASE_URL: postgresql+psycopg://nudnik:${POSTGRES_PASSWORD:-nudnik}@nudnik-db:5432/nudnik
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       DEFAULT_TZ: ${DEFAULT_TZ:-Asia/Jerusalem}
       DEFAULT_LANG: ${DEFAULT_LANG:-he}
       SCHEDULER_ENABLED: "true"
       TICK_SECONDS: "30"
-      NTFY_URL: http://ntfy:80
+      # By container name, not service name: on a shared external network a
+      # bare `ntfy` could resolve to another stack's ntfy.
+      NTFY_URL: http://nudnik-ntfy:80
       DATA_DIR: /data
     env_file:
       - .env
     volumes:
       - app-data:/data
-    ports:
-      - "${APP_PORT:-8080}:8000"
+    networks:
+      - edge          # reachable by the tunnel
+      - internal      # reaches the database
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 30s
@@ -51,14 +67,18 @@ services:
       POSTGRES_DB: nudnik
     volumes:
       - db-data:/var/lib/postgresql/data
+    # Deliberately NOT on `edge`. The tunnel has no business reaching the
+    # database, and nothing outside this stack needs to.
+    networks:
+      - internal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nudnik"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Your own push server. The Android ntfy app connects straight to this over
-  # a WebSocket, so escalation at tier 1+ never touches Google at all.
+  # Your own push server. The Android ntfy app connects straight to this over a
+  # WebSocket, so escalation at tier 1+ never touches Google at all.
   ntfy:
     image: binwiederhier/ntfy:latest
     container_name: nudnik-ntfy
@@ -78,8 +98,17 @@ services:
     volumes:
       - ntfy-cache:/var/cache/ntfy
       - ntfy-data:/var/lib/ntfy
-    ports:
-      - "${NTFY_PORT:-8081}:80"
+    networks:
+      - edge          # the phone reaches it through the tunnel
+      - internal      # the app publishes to it directly
+
+networks:
+  # Shared with every other stack and with the tunnel connector. Create once:
+  #   docker network create edge
+  edge:
+    external: true
+  # Private to this stack; the database never leaves it.
+  internal:
 
 volumes:
   app-data:

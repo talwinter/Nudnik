@@ -40,10 +40,33 @@ In the **Cloudflare Zero Trust dashboard** → Networks → Tunnels → your tun
 | Subdomain | `nudnik` |
 | Domain | `yourdomain.com` |
 | Service type | `HTTP` |
-| URL | `localhost:8080` |
+| URL | `nudnik-app:8000` — if cloudflared runs as a container (see below) |
+| URL | `localhost:8080` — if cloudflared runs on the host, with the localports override |
 
 Cloudflare provides the HTTPS certificate automatically. You do **not** need
 Caddy while using a tunnel.
+
+### Running several apps on one server
+
+By default this stack publishes **no ports at all**. Containers are reached by
+name from the tunnel connector, which means every app on the server can use its
+natural internal port and none of them can collide.
+
+```bash
+docker network create edge      # once per server
+docker compose -f deploy/docker-compose.cloudflared.yml up -d
+docker compose up -d
+```
+
+Any other app joins the same pattern: add `networks: [edge]`, delete its
+`ports:` block, and point its hostname at `http://its-container-name:PORT`.
+
+> **If a cloudflared already runs on your host, do not reuse its token here.**
+> Cloudflare treats two connectors on one tunnel as HA replicas and
+> load-balances between them, so half your requests would reach the connector
+> that cannot see the app. Create a *second* tunnel for the container instead —
+> a hostname belongs to exactly one tunnel, so both coexist and you can migrate
+> hostnames one at a time with no downtime.
 
 > **Why this matters:** Web Push, the installed app, and every Done/Snooze link
 > are bound to this exact origin. Changing it later breaks all three.

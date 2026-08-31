@@ -1,0 +1,54 @@
+# The tunnel connector, as its own stack.
+#
+# Kept separate from any single app because one connector serves all of them.
+# Start it once and every app that joins the `edge` network becomes reachable
+# by container name -- no published ports anywhere.
+#
+#   docker network create edge          # once, if it does not exist
+#   docker compose -f deploy/docker-compose.cloudflared.yml up -d
+#
+# Put the token in a .env file NEXT TO THIS FILE, or export it in the shell:
+#   CLOUDFLARE_TUNNEL_TOKEN=eyJhIjoi...
+#
+# ---------------------------------------------------------------------------
+# Do NOT start this with the same token as a connector already running on the
+# host. Cloudflare treats multiple connectors on one tunnel as high-availability
+# replicas and load-balances between them, so roughly half your requests would
+# arrive at whichever connector cannot reach the app -- intermittent 502s that
+# look random.
+#
+# Create a SECOND tunnel for this one instead. A hostname belongs to exactly one
+# tunnel, so the two coexist and you can migrate hostnames one at a time.
+# ---------------------------------------------------------------------------
+#
+# Ingress rules live in the Zero Trust dashboard, and the service URL is
+# resolved from inside THIS container. So the target is the container name and
+# its internal port:
+#
+#   nudnik.example.com  ->  http://nudnik-app:8000
+#   ntfy.example.com    ->  http://nudnik-ntfy:80
+#
+# Note the internal port (8000), not any host mapping.
+
+name: cloudflared
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN}
+      # Metrics on the container's own loopback; handy for `docker exec`
+      # troubleshooting without exposing anything.
+      TUNNEL_METRICS: 127.0.0.1:2000
+    networks:
+      - edge
+    # It only ever makes outbound connections, so it needs nothing else.
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  edge:
+    external: true
