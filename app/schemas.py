@@ -139,6 +139,10 @@ class QuickAddIn(BaseModel):
     text: str
     preset: str | None = None
     dry_run: bool = False
+    # Set by the editor when the user picks a date explicitly. Without it a
+    # template with lead-time stages would be anchored to "about now", which
+    # makes every prep stage instantly overdue.
+    anchor_at: datetime | None = None
 
 
 class SettingsPatch(BaseModel):

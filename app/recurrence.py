@@ -303,20 +303,62 @@ def materialise_all(db: Session) -> int:
 
 
 def resync(db: Session, rem: Reminder) -> None:
-    """Rebuild future open occurrences after a reminder is edited.
+    """Realign a reminder's open occurrences after it is edited.
 
-    Closed occurrences and anything already being chased are preserved, so
-    editing a reminder never erases history or drops an active nag.
+    Deleting only future *scheduled* rows was not enough. Move an event from
+    today to next month and the lead-time stages, which sit in the past, were
+    left behind -- so the reminder kept nagging about a pharmacy call dated to
+    the old anchor while the event itself had moved. Ghosts that no edit could
+    clear.
+
+    Now every open occurrence is matched against the new schedule and moved to
+    where it belongs, or removed if the new schedule has no place for it.
+    Closed occurrences are never touched: they are history.
     """
     now = utcnow()
-    (
+    horizon_end = now + timedelta(days=HORIZON_DAYS)
+    stages = normalise_stages(rem.stages)
+
+    # What the schedule should look like after the edit.
+    expected: dict[tuple[int, int], tuple[datetime, dict]] = {}
+    for cycle, anchor in iter_anchors(rem, horizon_end):
+        for idx, stage in enumerate(stages):
+            due = offset_local(anchor, stage["offset_minutes"], rem.tz)
+            due = apply_stage_time(due, stage.get("at_time"), rem.tz)
+            expected[(cycle, idx)] = (due, stage)
+
+    open_rows = (
         db.query(Occurrence)
         .filter(
             Occurrence.reminder_id == rem.id,
-            Occurrence.status == "scheduled",
-            Occurrence.due_at > now,
+            Occurrence.status.in_(OPEN_STATUSES),
         )
-        .delete(synchronize_session=False)
+        .all()
     )
+
+    for occ in open_rows:
+        key = (occ.cycle, occ.stage_index)
+        if key not in expected:
+            # The new schedule has no slot for this one -- a stage was deleted,
+            # or the recurrence no longer reaches this cycle.
+            db.delete(occ)
+            continue
+
+        due, stage = expected[key]
+        occ.stage_label = stage["label"]
+        occ.stage_kind = stage["kind"]
+
+        if occ.due_at != due:
+            # The obligation moved. Chasing it on the old timetable would be
+            # nagging about a date that no longer exists, so the escalation
+            # restarts from the new time.
+            occ.due_at = due
+            occ.status = "scheduled"
+            occ.attempts = 0
+            occ.tier = 0
+            occ.snooze_until = None
+            occ.snooze_count = 0
+            occ.next_attempt_at = due
+
     db.flush()
     materialise(db, rem, now)

@@ -64,8 +64,13 @@
     nudge: (id) => post('/occurrences/' + id + '/nudge'),
     callAssist: (id) => post('/occurrences/' + id + '/call-assist'),
 
-    quickAdd: (text, preset, dryRun) =>
-      post('/quick-add', { text, preset: preset || null, dry_run: !!dryRun }),
+    quickAdd: (text, preset, dryRun, anchorAt) =>
+      post('/quick-add', {
+        text,
+        preset: preset || null,
+        dry_run: !!dryRun,
+        anchor_at: anchorAt || null,
+      }),
 
     presets: () => get('/presets'),
     analytics: (days) => get('/analytics?days=' + (days || 90)),

@@ -383,6 +383,12 @@
 
       <div id="qaPreview" class="hint mono" style="min-height:20px;color:var(--violet)"></div>
 
+      <div class="field" style="margin-top:13px">
+        <label for="qaWhen">${esc(t('qa_when'))}</label>
+        <input type="datetime-local" id="qaWhen">
+        <div class="hint">${esc(t('qa_when_hint'))}</div>
+      </div>
+
       <div class="field" style="margin-top:15px">
         <label>${esc(t('pick_template'))}</label>
         <div class="hint" style="margin:0 0 9px">${esc(t('template_hint'))}</div>
@@ -412,6 +418,12 @@
           preview.textContent = parsed.title
             ? `→ ${parsed.title} · ${I18n.fmtDateTime(parsed.anchor_at)}`
             : '';
+          // Only prefill an untouched field: never overwrite a date the user
+          // typed in themselves.
+          const when = $('#qaWhen');
+          if (when && !when.value && parsed.anchor_local) {
+            when.value = parsed.anchor_local.slice(0, 16);
+          }
         } catch (e) { preview.textContent = ''; }
       }, 380);
     });
@@ -1262,7 +1274,13 @@
         const text = $('#qaText').value.trim();
         if (!text) return;
         const chosen = $('#qaPresets').querySelector('.chip-toggle.on');
-        await API.quickAdd(text, chosen ? chosen.dataset.preset : null, false);
+        const when = $('#qaWhen').value;
+        await API.quickAdd(
+          text,
+          chosen ? chosen.dataset.preset : null,
+          false,
+          when ? new Date(when).toISOString() : null
+        );
         closeSheet({ discard: true });
         toast(t('saved'), 'ok');
         render();

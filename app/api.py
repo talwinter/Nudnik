@@ -465,10 +465,18 @@ def quick_add(payload: QuickAddIn, db: Session = Depends(get_db)):
     now_local = datetime.now(tz).replace(tzinfo=None)
 
     parsed = nlp.parse(payload.text, now_local)
-    when_local = parsed["when"] or (now_local + timedelta(hours=1))
-    anchor_utc = (
-        when_local.replace(tzinfo=tz).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
-    )
+
+    if payload.anchor_at is not None:
+        # An explicit choice always wins over anything guessed from the text.
+        anchor_utc = _naive(payload.anchor_at)
+        when_local = anchor_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).replace(
+            tzinfo=None
+        )
+    else:
+        when_local = parsed["when"] or (now_local + timedelta(hours=1))
+        anchor_utc = (
+            when_local.replace(tzinfo=tz).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+        )
 
     preview = {
         "title": parsed["title"],
@@ -481,8 +489,28 @@ def quick_add(payload: QuickAddIn, db: Session = Depends(get_db)):
     if payload.dry_run:
         return preview
 
-    stages = normalise_stages([])
     preset_data = presets.get_preset(payload.preset) if payload.preset else None
+
+    # A template's value is its lead-time chain, and that chain only makes
+    # sense relative to a real date. Guessing "in an hour" would silently
+    # create a pharmacy call dated two weeks ago -- overdue the moment it is
+    # saved. Better to ask than to invent.
+    if (
+        preset_data
+        and payload.anchor_at is None
+        and parsed["when"] is None
+        and any(st["offset_minutes"] < 0 for st in preset_data["stages"])
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "בחר תאריך לאירוע — התבנית הזו כוללת שלבי הכנה לפני האירוע"
+                if lang == "he"
+                else "Pick a date for the event — this template has stages before it"
+            ),
+        )
+
+    stages = normalise_stages([])
     category, emoji, intensity = "general", "", settings_store.get(
         db, "default_intensity", "relentless"
     )

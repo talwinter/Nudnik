@@ -102,6 +102,11 @@
       en: 'Write it however you like. You can also text the Telegram bot.',
     },
     pick_template: { he: 'בחר תבנית', en: 'Pick a template' },
+    qa_when: { he: 'מתי האירוע', en: 'When is the event' },
+    qa_when_hint: {
+      he: 'אפשר להשאיר ריק אם כתבת תאריך בטקסט. תבנית עם שלבי הכנה חייבת תאריך — אחרת ההכנות יהיו באיחור כבר ברגע השמירה.',
+      en: 'Leave blank if you wrote a date in the text. A template with prep stages needs one, or those stages are overdue the moment you save.',
+    },
     template_hint: {
       he: 'תבנית מוסיפה אוטומטית את שלבי ההכנה — בדרך כלל הם החלק שנשכח.',
       en: 'A template adds the prep stages automatically — usually the part that gets forgotten.',
