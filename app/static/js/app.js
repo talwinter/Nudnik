@@ -480,7 +480,47 @@
       <input type="text" class="stage-label" value="${esc(stage.label || '')}"
              placeholder="${esc(t('stage_label_ph'))}">
       ${intensitySelect}
+      <div class="stage-when mono"></div>
     </div>`;
+  }
+
+  /* Show each stage's real date.
+   *
+   * "8 days before" is measured from the event, not from today -- so with the
+   * event nine days out it lands tomorrow. Perfectly logical and completely
+   * unobvious, so the row states the actual date rather than leaving it as
+   * mental arithmetic. */
+  function updateStageDates() {
+    const host = $('#fStages');
+    const whenField = $('#fWhen');
+    if (!host || !whenField) return;
+
+    const anchor = whenField.value ? new Date(whenField.value) : null;
+    host.querySelectorAll('.stage-row').forEach((row) => {
+      const out = row.querySelector('.stage-when');
+      if (!out) return;
+      if (!anchor || isNaN(anchor)) { out.textContent = ''; return; }
+
+      const d = new Date(anchor);
+      const daysInput = row.querySelector('.stage-days');
+      if (daysInput) {
+        const days = Math.abs(parseInt(daysInput.value || '0', 10));
+        const after = row.querySelector('.stage-dir').value === 'after';
+        d.setDate(d.getDate() + (after ? days : -days));
+      }
+      const timeEl = row.querySelector('.stage-time');
+      if (timeEl && timeEl.value) {
+        const [hh, mm] = timeEl.value.split(':').map(Number);
+        d.setHours(hh, mm, 0, 0);
+      }
+
+      const mins = (d - Date.now()) / 60000;
+      const rel = mins < 0
+        ? t('open_for', { t: I18n.humanDuration(mins) })
+        : t('due_in', { t: I18n.humanDuration(mins) });
+      out.textContent = `${I18n.fmtDateTime(d.toISOString())} · ${rel}`;
+      out.classList.toggle('is-past', mins < 0);
+    });
   }
 
   function stageTime(row) {
@@ -697,6 +737,14 @@
       if (el) el.addEventListener('input', updateRepeatPreview);
     });
     updateRepeatPreview();
+
+    // Stage dates depend on the anchor and on each row's own inputs, so listen
+    // at the container to catch rows added later too.
+    $('#fWhen').addEventListener('input', updateStageDates);
+    $('#fWhen').addEventListener('change', updateStageDates);
+    $('#fStages').addEventListener('input', updateStageDates);
+    $('#fStages').addEventListener('change', updateStageDates);
+    updateStageDates();
 
     $('#fIntensity').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-val]');
@@ -1263,6 +1311,7 @@
         // Keep the event itself last, so the list reads in chronological order.
         const mainRow = container.querySelector('.stage-row.is-main');
         if (mainRow) container.appendChild(mainRow);
+        updateStageDates();
         break;
       }
 

@@ -743,3 +743,16 @@ td.num,
 .cycle-summary .chip { margin-inline-start: auto; }
 .cycle-body { padding: 0 12px 12px; }
 .cycle-body .loop:last-child { margin-bottom: 0; }
+
+/* The resolved date for a stage row.
+ *
+ * "8 days before" is relative to the event, so with the event nine days out it
+ * lands tomorrow. Stating the date removes the mental arithmetic. */
+.stage-when {
+  grid-column: 1 / -1;
+  font-size: 11.5px;
+  color: var(--muted);
+  padding-inline-start: 2px;
+}
+.stage-when.is-past { color: var(--rose); }
+.stage-when:empty { display: none; }
