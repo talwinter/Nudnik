@@ -25,6 +25,13 @@ data/
 *.sqlite3
 *.log
 
+# Database dumps carry every one of those secrets in plain text. Treat a
+# pg_dump the way you would treat the .env file.
+*.sql
+*.dump
+*.sql.gz
+nudnik-backup*
+
 # --- superseded original app (kept locally for reference) ------------------
 _legacy/
 
