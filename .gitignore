@@ -1,0 +1,44 @@
+# --- secrets: never commit -------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# Private keys of any shape. SSH/ holds the Oracle VPS keypair; it should not
+# live inside a repo working tree at all, but this makes a stray `git add -A`
+# harmless.
+SSH/
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+*_rsa
+known_hosts
+
+# --- runtime data ----------------------------------------------------------
+# The database holds the VAPID private key, the API key, the calendar token and
+# your SMTP password.
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# --- superseded original app (kept locally for reference) ------------------
+_legacy/
+
+# --- python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# --- editors / os ----------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="he" dir="rtl" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#141019">
+<meta name="description" content="לא מרפה עד שסגרת">
+<title>נודניק</title>
+
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+
+<link rel="stylesheet" href="/static/css/app.css?v=__V__">
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- Desktop console rail. Collapses to the bottom bar on small screens. -->
+  <aside class="rail" id="rail">
+    <div class="rail-brand">
+      <img src="/static/icons/icon.svg" alt="" width="30" height="30">
+      <div>
+        <div class="rail-name" data-t="app_name">נודניק</div>
+        <div class="rail-tag" data-t="tagline">לא מרפה עד שסגרת</div>
+      </div>
+    </div>
+
+    <nav class="rail-nav" id="railNav"></nav>
+
+    <div class="rail-foot">
+      <button class="ghost-btn" id="langToggle" type="button">EN</button>
+      <span class="dot-sep"></span>
+      <span class="rail-status" id="railStatus"></span>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <header class="topbar">
+      <button class="icon-btn only-mobile" id="menuBtn" type="button" aria-label="תפריט">☰</button>
+      <h1 class="topbar-title" id="viewTitle">עכשיו</h1>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="refreshBtn" type="button" aria-label="רענן">⟳</button>
+        <button class="pill-btn" id="addBtn" type="button">
+          <span aria-hidden="true">+</span> <span data-t="add">הוספה</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="view" id="view" aria-live="polite"></div>
+  </main>
+
+  <!-- Thumb-reach navigation. Add sits centre because it is the only action
+       you take when you are not already looking at something. -->
+  <nav class="tabbar only-mobile" id="tabbar"></nav>
+</div>
+
+<div class="sheet-backdrop" id="backdrop" hidden></div>
+<div class="sheet" id="sheet" hidden role="dialog" aria-modal="true"></div>
+<div class="toast-stack" id="toasts"></div>
+
+<script src="/static/js/i18n.js?v=__V__"></script>
+<script src="/static/js/api.js?v=__V__"></script>
+<script src="/static/js/views.js?v=__V__"></script>
+<script src="/static/js/app.js?v=__V__"></script>
+</body>
+</html>

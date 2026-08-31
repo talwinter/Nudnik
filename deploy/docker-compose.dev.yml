@@ -1,0 +1,30 @@
+# Development override -- edit code without rebuilding the image.
+#
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.dev.yml up -d
+#
+# The image bakes `app/` in via COPY, so normally every front-end tweak needs a
+# `--build`. This mounts the source over it instead:
+#
+#   * HTML / CSS / JS  -> just reload the page, the app is served from disk
+#   * Python           -> uvicorn --reload restarts the process by itself
+#
+# Do not use this in production. The whole point of the image is that it is a
+# fixed, reproducible artefact; a bind mount makes the running code depend on
+# whatever happens to be on the host disk.
+
+services:
+  app:
+    volumes:
+      # Relative to the PROJECT directory (where docker-compose.yml lives),
+      # not to this override file -- that is how Compose resolves paths in
+      # additional -f files.
+      - ./app:/srv/app
+      - app-data:/data
+    command: >
+      uvicorn app.main:app
+      --host 0.0.0.0 --port 8000
+      --proxy-headers --forwarded-allow-ips=*
+      --reload --reload-dir /srv/app
+    environment:
+      # Tighter tick so you are not waiting 30s to see an escalation fire.
+      TICK_SECONDS: "10"

@@ -1,0 +1,32 @@
+# HTTPS override for a VPS with a public IP and a real domain.
+#
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.caddy.yml up -d
+#
+# Not needed when a Cloudflare tunnel already terminates TLS for you.
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: nudnik-caddy
+    restart: unless-stopped
+    depends_on: [app, ntfy]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      NTFY_DOMAIN: ${NTFY_DOMAIN:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  app:
+    ports: !override []
+
+  ntfy:
+    ports: !override []
+
+volumes:
+  caddy-data:
+  caddy-config:

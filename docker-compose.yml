@@ -1,0 +1,88 @@
+# Nudnik -- fully self-hosted stack.
+#
+# Nothing here calls a third-party service. Postgres holds the data, ntfy is
+# your own push server, and the app talks to both over the internal network.
+#
+# Dev on a PC behind a Cloudflare tunnel: this file is enough.
+# On the Oracle box with a public IP, add the Caddy override for HTTPS:
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.caddy.yml up -d
+#
+# Everything is arm64-compatible, so it runs unchanged on Ampere.
+
+name: nudnik
+
+services:
+  app:
+    build: .
+    container_name: nudnik
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://nudnik:${POSTGRES_PASSWORD:-nudnik}@db:5432/nudnik
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      DEFAULT_TZ: ${DEFAULT_TZ:-Asia/Jerusalem}
+      DEFAULT_LANG: ${DEFAULT_LANG:-he}
+      SCHEDULER_ENABLED: "true"
+      TICK_SECONDS: "30"
+      NTFY_URL: http://ntfy:80
+      DATA_DIR: /data
+    env_file:
+      - .env
+    volumes:
+      - app-data:/data
+    ports:
+      - "${APP_PORT:-8080}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  db:
+    image: postgres:16-alpine
+    container_name: nudnik-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nudnik
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nudnik}
+      POSTGRES_DB: nudnik
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nudnik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Your own push server. The Android ntfy app connects straight to this over
+  # a WebSocket, so escalation at tier 1+ never touches Google at all.
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    container_name: nudnik-ntfy
+    restart: unless-stopped
+    command: serve
+    environment:
+      NTFY_BASE_URL: ${NTFY_PUBLIC_URL:-http://localhost:8081}
+      NTFY_LISTEN_HTTP: ":80"
+      NTFY_BEHIND_PROXY: "true"
+      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+      NTFY_CACHE_DURATION: "72h"
+      # Locked down by default: only an authenticated publisher may post, and
+      # topics are not world-readable. Create users with:
+      #   docker compose exec ntfy ntfy user add --role=admin you
+      NTFY_AUTH_FILE: /var/lib/ntfy/user.db
+      NTFY_AUTH_DEFAULT_ACCESS: "deny-all"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+      - ntfy-data:/var/lib/ntfy
+    ports:
+      - "${NTFY_PORT:-8081}:80"
+
+volumes:
+  app-data:
+  db-data:
+  ntfy-cache:
+  ntfy-data:

@@ -1,0 +1,27 @@
+# Automatic Let's Encrypt certificates. Web Push requires real HTTPS, and this
+# is the whole configuration needed to get it.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The service worker must never be cached, or a stale one keeps handling
+	# push events after a deploy.
+	@sw path /sw.js
+	header @sw Cache-Control "no-cache, no-store, must-revalidate"
+
+	header /static/* Cache-Control "public, max-age=604800"
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	reverse_proxy app:8000
+}
+
+# Optional: expose ntfy on its own hostname so the Android app can reach it.
+{$NTFY_DOMAIN} {
+	reverse_proxy ntfy:80
+}
