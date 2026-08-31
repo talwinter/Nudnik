@@ -648,6 +648,7 @@ def get_settings(db: Session = Depends(get_db)):
     masked["channels_ready"] = channels.configured_channels(db)
     masked["scheduler"] = scheduler.status()
     masked["push_device_count"] = db.query(PushSubscription).count()
+    masked["auth_enabled"] = security.auth_required()
     return masked
 
 

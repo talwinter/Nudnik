@@ -61,12 +61,22 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-Change **exactly two lines**, leave everything else blank:
+Change **exactly three lines**, leave everything else blank:
 
 ```ini
 PUBLIC_URL=https://nudnik.yourdomain.com
 POSTGRES_PASSWORD=pick-something-long
+ADMIN_PASSWORD=pick-something-else
 ```
+
+> **ADMIN_PASSWORD is not optional once a tunnel is pointing at this.** Blank
+> means no authentication at all — anyone who reaches the address can read and
+> change your reminders, medical details included, and retrieve your API key.
+>
+> Setting it does **not** break notifications: the Done/Snooze links in a
+> notification and the calendar feed carry their own tokens and keep working on
+> a device that has never signed in. You sign in once per browser and the
+> session lasts 90 days.
 
 > Leave every channel value blank. A placeholder like `your-email@gmail.com`
 > seeds a broken channel that then fails silently.

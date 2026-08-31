@@ -746,7 +746,24 @@
     const icsUrl = '';
     const hookUrl = `${origin}/hooks/telegram/…`;
 
+    const authBanner = s.auth_enabled
+      ? `<div class="banner" style="border-color:rgba(95,211,168,.4)">
+           <div class="banner-mark">🔒</div>
+           <div class="banner-body">
+             <strong>${esc(t('auth_on'))}</strong>
+             <a class="btn btn-sm" href="/logout" style="margin-top:9px">${esc(t('logout'))}</a>
+           </div>
+         </div>`
+      : `<div class="banner hot">
+           <div class="banner-mark">🔓</div>
+           <div class="banner-body">
+             <strong>${esc(t('auth_off_title'))}</strong>
+             <p>${esc(t('auth_off_body'))}</p>
+           </div>
+         </div>`;
+
     return `
+    ${authBanner}
     <section class="section">
       <div class="section-head"><h2>${esc(t('set_general'))}</h2></div>
       <div class="card">

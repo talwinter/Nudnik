@@ -5,12 +5,19 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi import Body, Depends, FastAPI, Form, HTTPException, Request
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from . import api, engine, nlp, scheduler, settings_store
+from . import security as security_mod
 from .config import STATIC_DIR
 from .db import Occurrence, Reminder, SessionLocal, init_db, log_event, utcnow
 from .i18n import t
@@ -79,6 +86,162 @@ def _ensure_vapid(db: Session) -> None:
 
 
 app = FastAPI(title="Nudnik", version="2.0.0", lifespan=lifespan)
+
+
+# --------------------------------------------------------------------------
+# Authentication
+# --------------------------------------------------------------------------
+
+# Paths that must work without a session. Each either carries its own secret or
+# is needed before a login page can render.
+OPEN_PREFIXES = (
+    "/login",
+    "/logout",
+    "/a/",                      # one-tap Done/Snooze -- tapped from a
+                                # notification, on a device that may never have
+                                # logged in. Carries a single-use random token.
+    "/hooks/",                  # the API key is in the path
+    "/static/",
+    "/manifest.webmanifest",
+    "/sw.js",
+    "/api/tick",                # guarded by the API key
+    "/api/calendar.ics",        # guarded by the calendar token
+    "/api/health",              # the container healthcheck
+    "/api/version",
+)
+
+LOGIN_PAGE = """<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>
+  :root {{ color-scheme: dark; }}
+  body {{
+    margin:0; min-height:100vh; display:grid; place-items:center;
+    background:#141019; color:#F2EDF7; direction:{dir};
+    font-family: Assistant, -apple-system, Segoe UI, Roboto, sans-serif;
+    padding:24px;
+  }}
+  form {{ width:min(360px,92vw); text-align:center; }}
+  .mark {{ font-size:40px; margin-bottom:14px; }}
+  h1 {{ font-size:24px; margin:0 0 22px; font-weight:800; }}
+  input {{
+    width:100%; padding:13px 15px; margin-bottom:12px; font-size:16px;
+    background:#0F0B14; color:#F2EDF7; border:1px solid #332A3D; border-radius:12px;
+  }}
+  input:focus {{ outline:none; border-color:#8B7BF7; }}
+  button {{
+    width:100%; padding:13px; font-size:16px; font-weight:700; cursor:pointer;
+    background:#8B7BF7; color:#16112A; border:0; border-radius:12px;
+  }}
+  .err {{ color:#FF5C7A; font-size:14px; margin-bottom:12px; }}
+</style>
+<form method="post" action="/login">
+  <div class="mark">◍</div>
+  <h1>{title}</h1>
+  {error}
+  <input type="password" name="password" placeholder="{placeholder}" autofocus
+         autocomplete="current-password">
+  <input type="hidden" name="next" value="{next}">
+  <button type="submit">{cta}</button>
+</form>
+"""
+
+
+def _login_page(db: Session, error: str = "", next_path: str = "/") -> HTMLResponse:
+    lang = settings_store.get(db, "lang", "he")
+    he = lang == "he"
+    return HTMLResponse(
+        LOGIN_PAGE.format(
+            title=t("app_name", lang),
+            dir="rtl" if he else "ltr",
+            placeholder="סיסמה" if he else "Password",
+            cta="כניסה" if he else "Sign in",
+            next=security_mod.sanitise_next(next_path),
+            error=f'<div class="err">{error}</div>' if error else "",
+        ),
+        status_code=401 if error else 200,
+    )
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    """Gate everything except the paths that carry their own secret.
+
+    With no ADMIN_PASSWORD set the app is entirely open, which is fine on a
+    laptop and unwise behind a public tunnel -- the settings page warns about
+    it rather than silently pretending to be secure.
+    """
+    if not security_mod.auth_required():
+        return await call_next(request)
+
+    path = request.url.path
+    if any(path.startswith(prefix) for prefix in OPEN_PREFIXES):
+        return await call_next(request)
+
+    db = SessionLocal()
+    try:
+        ok = security_mod.valid_session(
+            db, request.cookies.get(security_mod.SESSION_COOKIE)
+        )
+        if ok:
+            return await call_next(request)
+        # An API caller wants a status code, not a login page.
+        if path.startswith("/api/"):
+            return JSONResponse({"detail": "Authentication required"}, status_code=401)
+        return _login_page(db, next_path=str(request.url.path))
+    finally:
+        db.close()
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_form(request: Request, db: Session = Depends(api.get_db)):
+    if not security_mod.auth_required():
+        return RedirectResponse("/", status_code=303)
+    if security_mod.valid_session(db, request.cookies.get(security_mod.SESSION_COOKIE)):
+        return RedirectResponse("/", status_code=303)
+    return _login_page(db, next_path=request.query_params.get("next", "/"))
+
+
+@app.post("/login")
+def login_submit(
+    request: Request,
+    password: str = Form(""),
+    next: str = Form("/"),
+    db: Session = Depends(api.get_db),
+):
+    lang = settings_store.get(db, "lang", "he")
+    if not security_mod.password_ok(password):
+        log_event(db, "auth", "Failed sign-in attempt")
+        db.commit()
+        return _login_page(
+            db,
+            error="סיסמה שגויה" if lang == "he" else "Wrong password",
+            next_path=next,
+        )
+
+    response = RedirectResponse(security_mod.sanitise_next(next), status_code=303)
+    response.set_cookie(
+        security_mod.SESSION_COOKIE,
+        security_mod.issue_session(db),
+        max_age=security_mod.SESSION_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        # Secure is set whenever the request arrived over HTTPS, which behind a
+        # tunnel is reported through the forwarded proto header.
+        secure=request.url.scheme == "https"
+        or request.headers.get("x-forwarded-proto") == "https",
+    )
+    return response
+
+
+@app.get("/logout")
+def logout():
+    response = RedirectResponse("/login", status_code=303)
+    response.delete_cookie(security_mod.SESSION_COOKIE)
+    return response
+
+
 app.include_router(api.router)
 
 

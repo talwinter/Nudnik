@@ -274,6 +274,13 @@
       en: 'After enough ignored reminders, this person gets told. Social pressure works when nothing else does.',
     },
     set_danger: { he: 'נתונים', en: 'Data' },
+    auth_off_title: { he: 'האפליקציה פתוחה לכל אחד', en: 'This instance has no password' },
+    auth_off_body: {
+      he: 'כל מי שמגיע לכתובת הזו יכול לראות ולשנות את התזכורות שלך, כולל פרטים רפואיים. הגדר ADMIN_PASSWORD בקובץ .env והפעל מחדש.',
+      en: 'Anyone who reaches this address can read and change your reminders, medical details included. Set ADMIN_PASSWORD in .env and restart.',
+    },
+    auth_on: { he: 'מוגן בסיסמה', en: 'Password protected' },
+    logout: { he: 'יציאה', en: 'Sign out' },
     lang_label: { he: 'שפה', en: 'Language' },
     tz_label: { he: 'אזור זמן', en: 'Timezone' },
     public_url_label: { he: 'כתובת ציבורית', en: 'Public address' },

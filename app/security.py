@@ -9,6 +9,7 @@ import secrets
 from datetime import datetime, timedelta
 
 from fastapi import Header, HTTPException, Request
+from itsdangerous import BadSignature, SignatureExpired, TimestampSigner
 from sqlalchemy.orm import Session
 
 from . import settings_store
@@ -76,19 +77,47 @@ def api_key_dep(
     return x_api_key
 
 
-def check_admin(request: Request, db: Session) -> bool:
-    """Admin gate.
+SESSION_COOKIE = "nudnik_session"
+SESSION_MAX_AGE = 90 * 24 * 3600  # re-login quarterly
 
-    An empty ``ADMIN_PASSWORD`` means the instance is unprotected, which is
-    fine behind a private tunnel and dangerous on the open internet -- the
-    settings page says so out loud.
-    """
+
+def _signer(db: Session) -> TimestampSigner:
+    return TimestampSigner(settings_store.get(db, "secret_key", "") or "nudnik")
+
+
+def issue_session(db: Session) -> str:
+    """A signed, expiring session token. The password itself is never stored
+    in the cookie, so a stolen cookie cannot be replayed as a credential."""
+    return _signer(db).sign(b"admin").decode()
+
+
+def valid_session(db: Session, token: str | None) -> bool:
+    if not token:
+        return False
+    try:
+        _signer(db).unsign(token, max_age=SESSION_MAX_AGE)
+        return True
+    except (BadSignature, SignatureExpired):
+        return False
+
+
+def password_ok(candidate: str) -> bool:
     from .config import ADMIN_PASSWORD
 
     if not ADMIN_PASSWORD:
-        return True
-    session_pw = request.cookies.get("nudnik_admin")
-    return bool(session_pw) and hmac.compare_digest(session_pw, ADMIN_PASSWORD)
+        return False
+    return hmac.compare_digest(str(candidate), str(ADMIN_PASSWORD))
+
+
+def auth_required() -> bool:
+    """Whether this instance is protected at all.
+
+    An empty ADMIN_PASSWORD leaves everything open. That is fine on a laptop
+    and reckless behind a public tunnel, so the UI says so out loud.
+    """
+    from .config import ADMIN_PASSWORD
+
+    return bool(ADMIN_PASSWORD)
 
 
 def sanitise_next(value: str | None) -> str:
