@@ -1,0 +1,11 @@
+# Normalise line endings. Files are stored as LF in the repo and checked out
+# native, so a Windows clone and a Linux clone both behave. Without this a repo
+# authored on Windows can hand CRLF to a Linux container, which breaks anything
+# with a shebang.
+* text=auto eol=lf
+
+# Binary: never touch these.
+*.png binary
+*.woff2 binary
+*.ico binary
+*.svg text eol=lf
